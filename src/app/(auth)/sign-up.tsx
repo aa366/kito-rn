@@ -1,30 +1,93 @@
 import CustomButton from '@/components/CustomButton';
 import InputField from '@/components/InputField';
+import OAuth from '@/components/OAuth';
 import { icons, images } from '@/constants';
-import { useAuth, useSignUp } from '@clerk/expo';
+import { useSignUp } from '@clerk/expo';
 import { Link, router } from 'expo-router';
 import { useState } from 'react';
-import { Image, ScrollView, Text, View } from 'react-native';
+import { Alert, Image, ScrollView, Text, View } from 'react-native';
 import ReactNativeModal from 'react-native-modal';
 
-
+interface VerificationType {
+    code: string;
+    error: string;
+    state: "pending" | "default" | "success" | "failed";
+}
 
 export default function SignUp() {
-    const { isLoaded, isSignedIn } = useAuth();
-    const { signUp } = useSignUp()
+
+    const { signUp, fetchStatus } = useSignUp()
     const [showSuccessModal, setShowSuccessModal] = useState(false)
     const [form, setForm] = useState({
         name: "",
         email: "",
         password: ""
     })
-    const [verification, setVerification] = useState({
+    const [verification, setVerification] = useState<VerificationType>({
         state: "default",
         error: "",
         code: ""
     })
-    const onSignUpPress = async () => { }
-    const onPressVerify = async () => { }
+    const onSignUpPress = async () => {
+        if (fetchStatus === "fetching") return
+
+        try {
+            const attempt = await signUp.create({
+                firstName: form.name,
+                emailAddress: form.email,
+                password: form.password,
+            })
+            if (attempt.error) {
+                console.log(attempt.error)
+                throw new Error("attempt failed")
+            };
+
+
+
+            await signUp.verifications.sendEmailCode();
+            setVerification({
+                ...verification,
+                state: "pending"
+            })
+            console.log("sign up complete");
+
+        } catch (error: any) {
+            console.log(JSON.stringify(error, null, 2));
+            Alert.alert("ERROR", (error.errors[0].longMessage ?? error))
+
+        }
+    }
+    const onPressVerify = async () => {
+        if (fetchStatus === "fetching") return
+        try {
+            const completeSignUp = await signUp.verifications.verifyEmailCode({ code: verification.code })
+            console.log("verifing");
+
+            if (!completeSignUp.error) {
+                console.log("clerk fine");
+                setVerification({
+                    ...verification,
+                    state: "success"
+                })
+
+            } else {
+                setVerification({
+                    ...verification,
+                    error: "Verification failed. Please try again .",
+                    state: "failed"
+                })
+            }
+            console.log("verifing finished");
+
+
+        } catch (error: any) {
+            setVerification({
+                ...verification,
+                error: error.errors[0].longMessage,
+                state: "failed"
+            })
+        }
+    }
     return (
         <ScrollView className="flex-1 bg-white">
             <View className='flex-1 bg-white'>
@@ -45,6 +108,7 @@ export default function SignUp() {
                         label='email'
                         placeholder='Enter email'
                         icon={icons.email}
+                        textContentType='emailAddress'
                         value={form.email}
                         onChangeText={(value) => setForm({ ...form, email: value })} />
                     <InputField
@@ -57,15 +121,18 @@ export default function SignUp() {
                         onChangeText={(value) => setForm({ ...form, password: value })} />
                     <CustomButton
                         title='Sign Up'
-                        onPress={() => onSignUpPress}
+                        onPress={onSignUpPress}
                         className=' mt-6' />
-                    {/* OAuth */}
 
+                    {/* OAuth */}
+                    <OAuth />
                     <Link href={"/sign-in"} className='text-lg text-center text-general-200 mt-10 '>
                         Already have an account? {" "}
                         <Text className='text-primary-500'> Log In</Text></Link>
 
                 </View>
+
+                {/* Verify Model */}
                 <ReactNativeModal isVisible={verification.state === "pending"} onModalHide={() => {
                     if (verification.state === "success") {
                         setShowSuccessModal(true)
@@ -95,6 +162,8 @@ export default function SignUp() {
                         />
                     </View>
                 </ReactNativeModal>
+
+                {/* Success Moal */}
                 <ReactNativeModal isVisible={showSuccessModal}>
                     <View className='bg-white px-7 py-9 rounded-2xl min-h-[300px]'>
                         <Image source={images.check}
